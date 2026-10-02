@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+
+# Production output
+dist/
+coverage/
+
+# Vite and TypeScript caches
+.vite/
+*.tsbuildinfo
+node_modules/.tmp/
+
+# Environment files (keep the example)
+.env*
+!.env.example
+!.env.*.example
+
+# Logs and diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Operating systems
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local analysis evidence: never commit customer logs
+*.etl
+*.evtx
+*.dmp
+*.hdmp
+*.mdmp
+*.blg
+*.cap
+*.har
+*.pcap
+*.pcapng
+*.zip
+/logs/
+samples/private/
+
+# Test artifacts
+playwright-report/
+test-results/
+
+# Miscellaneous
+*.local
+*.bak
+*.tmp
+
+# Local deployment notes
+/guide/

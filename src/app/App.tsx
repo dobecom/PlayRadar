@@ -1,4 +1,4 @@
-import { CalendarDays, Newspaper, RefreshCw, Settings, Star, TowerControl } from 'lucide-react'
+import { CalendarDays, MapPin, Newspaper, RefreshCw, Settings, Star, TowerControl } from 'lucide-react'
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiDelete, ApiError, apiGet, apiPost, apiPut } from '../services/apiClient'
 import type {
@@ -18,23 +18,32 @@ import { displayDate, formatYmd, monthCells, parseDateKey } from '../features/ca
 import { parseDigestMessage } from '../features/digest/digestSafe'
 import {
   CATEGORY_COLORS,
-  categoryCounts,
+  DAY_GROUPS,
+  dayGroup,
+  calendarCategoryCounts,
+  calendarEvents,
   eventFlags,
   eventOverlapsDay,
+  isSideLongProgram,
   eventOverlapsRange,
-  isLongEvent,
   isNewEvent,
+  isRecentEvent,
   passesFilters,
   safeHttpUrl,
   sortEvents,
+  sortChronologically,
   whenText,
   type EventFilters,
 } from '../features/events/eventUtils'
 import { sanitizeNext } from '../features/login/redirect'
+import { EventMap } from '../features/map/EventMap'
+import { eventCoordinates } from '../features/map/coordinates'
+import { VersionPage } from '../features/version/VersionPage'
 
 const navItems = [
   { path: '/', label: '캘린더', icon: CalendarDays },
   { path: '/news', label: '새 소식', icon: Newspaper },
+  { path: '/map', label: '지도', icon: MapPin },
   { path: '/picks', label: '내 일정', icon: Star },
   { path: '/sources', label: '수집 소스', icon: TowerControl },
   { path: '/settings', label: '설정', icon: Settings },
@@ -43,7 +52,7 @@ const navItems = [
 const emptyFilters = (data: RadarDataset, pickIds: Set<string>): EventFilters => ({
   query: '',
   categories: new Set<string>(),
-  minScore: 2,
+  minScore: 0,
   recommendedOnly: false,
   showLong: false,
   newOnly: false,
@@ -75,14 +84,15 @@ function categoryLabel(data: RadarDataset, category: string): string {
 function navigate(path: string): void {
   window.history.pushState({}, '', path)
   window.dispatchEvent(new PopStateEvent('popstate'))
+  window.scrollTo(0, 0)
 }
 
 function AppHeader({ path, data, running, onRefresh }: { path: string; data: RadarDataset | null; running: boolean; onRefresh: () => void }) {
   return (
     <header className="topbar">
       <button className="brand" type="button" onClick={() => navigate('/')} aria-label="PlayRadar 홈">
-        <span className="brand-mark">🎻</span>
-        <span><strong>PlayRadar</strong><small>개인용 즐길거리 레이더</small></span>
+        <span className="brand-mark">☀️</span>
+        <span><strong>PlayRadar</strong></span>
       </button>
       <nav className="nav" aria-label="주요 메뉴">
         {navItems.map(({ path: href, label, icon: Icon }) => (
@@ -117,7 +127,7 @@ function LoginPage() {
       window.location.assign(sanitizeNext(params.get('next')))
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 0
-      setError(status === 429 ? '요청이 너무 많습니다. 잠시 후 다시 시도하세요.' : '접근 키를 확인하세요.')
+      setError(status === 429 ? '요청이 너무 많습니다. 잠시 후 다시 시도하세요.' : 'Access Key를 확인하세요.')
     } finally {
       setPending(false)
     }
@@ -126,13 +136,12 @@ function LoginPage() {
   return (
     <main className="login-shell">
       <section className="login-card">
-        <div className="hero-icon">🎻</div>
+        <div className="hero-icon">☀️</div>
         <h1>PlayRadar</h1>
-        <p className="muted">개인 일정 레이더입니다. 접근 키를 입력하세요.</p>
         <form onSubmit={submit} className="login-form">
-          <label>접근 키<input autoFocus type="password" value={accessKey} onChange={(event) => setAccessKey(event.currentTarget.value)} autoComplete="current-password" required /></label>
+          <label>Access Key<input autoFocus type="password" value={accessKey} onChange={(event) => setAccessKey(event.currentTarget.value)} autoComplete="current-password" required /></label>
           {error ? <p className="error">{error}</p> : null}
-          <button className="primary" type="submit" disabled={pending}>{pending ? '확인 중…' : '들어가기'}</button>
+          <button className="primary" type="submit" disabled={pending}>{pending ? '확인 중…' : 'Access'}</button>
         </form>
       </section>
     </main>
@@ -155,8 +164,7 @@ function EventLine({ event, data, pickIds, onOpen }: { event: StoredEvent; data:
   return <li className={event.alert ? 'alert-line' : ''}><EventChip event={event} data={data} pickIds={pickIds} compact={false} onOpen={onOpen} />{meta ? <div className="meta">{meta}</div> : null}</li>
 }
 
-function FilterPanel({ data, filters, onFilters }: { data: RadarDataset; filters: EventFilters; onFilters: (next: EventFilters) => void }) {
-  const counts = categoryCounts(data.events)
+function FilterPanel({ data, filters, onFilters, counts, separateLong = false }: { data: RadarDataset; filters: EventFilters; onFilters: (next: EventFilters) => void; counts: Record<string, number>; separateLong?: boolean }) {
   const sortedCats = Object.keys(counts).sort((a, b) => counts[b] - counts[a])
   const toggleCategory = (category: string) => {
     const next = new Set(filters.categories)
@@ -167,7 +175,7 @@ function FilterPanel({ data, filters, onFilters }: { data: RadarDataset; filters
 
   return (
     <section className="filters">
-      <input type="search" value={filters.query} onChange={(event) => onFilters({ ...filters, query: event.currentTarget.value })} placeholder="검색 (예: 첼로, 무료, 도서관, 러닝)" aria-label="일정 검색" />
+      <div className="section-head"><input type="search" value={filters.query} onChange={(event) => onFilters({ ...filters, query: event.currentTarget.value })} placeholder="Search" aria-label="일정 검색" /><button className="ghost" type="button" onClick={() => onFilters(emptyFilters(data, filters.pickIds))}>초기화</button></div>
       <div className="chips" aria-label="카테고리 필터">
         {sortedCats.map((category) => (
           <button key={category} type="button" className={filters.categories.has(category) ? 'cat on' : 'cat'} style={{ '--c': CATEGORY_COLORS[category] ?? '#64748b' } as React.CSSProperties} onClick={() => toggleCategory(category)}>
@@ -176,9 +184,9 @@ function FilterPanel({ data, filters, onFilters }: { data: RadarDataset; filters
         ))}
       </div>
       <div className="filter-row">
-        <label>추천도 ≥ <strong>{filters.minScore}</strong><input type="range" min="-3" max="10" step="0.5" value={filters.minScore} onChange={(event) => onFilters({ ...filters, minScore: Number(event.currentTarget.value) })} /></label>
+        <label>추천도 ≥ <strong>{filters.minScore}</strong><input aria-label="최소 추천도" type="range" min="0" max="10" step="0.5" value={filters.minScore} onChange={(event) => onFilters({ ...filters, minScore: Number(event.currentTarget.value) })} /></label>
         <label><input type="checkbox" checked={filters.recommendedOnly} onChange={(event) => onFilters({ ...filters, recommendedOnly: event.currentTarget.checked })} /> 추천만</label>
-        <label><input type="checkbox" checked={filters.showLong} onChange={(event) => onFilters({ ...filters, showLong: event.currentTarget.checked })} /> 진행 중 장기 프로그램 표시</label>
+        {!separateLong ? <label><input type="checkbox" checked={filters.showLong} onChange={(event) => onFilters({ ...filters, showLong: event.currentTarget.checked })} /> 진행 중 장기 프로그램 표시</label> : null}
         <label><input type="checkbox" checked={filters.newOnly} onChange={(event) => onFilters({ ...filters, newOnly: event.currentTarget.checked })} /> 새 소식</label>
         <label><input type="checkbox" checked={filters.picksOnly} onChange={(event) => onFilters({ ...filters, picksOnly: event.currentTarget.checked })} /> 내 일정만</label>
       </div>
@@ -186,11 +194,11 @@ function FilterPanel({ data, filters, onFilters }: { data: RadarDataset; filters
   )
 }
 
-function CalendarPage({ data, onPick }: { data: RadarDataset; onPick: (event: StoredEvent) => Promise<void> }) {
+function CalendarPage({ data, onPick, day }: { data: RadarDataset; onPick: (event: StoredEvent) => Promise<void>; day?: string }) {
   const pickIds = useMemo(() => new Set(data.picks), [data.picks])
   const [filters, setFilters] = useState(() => emptyFilters(data, pickIds))
   const [cursor, setCursor] = useState(() => {
-    const date = parseDateKey(data.today)
+    const date = parseDateKey(day || data.today)
     return new Date(date.getFullYear(), date.getMonth(), 1)
   })
   const [selected, setSelected] = useState<StoredEvent | null>(null)
@@ -198,20 +206,24 @@ function CalendarPage({ data, onPick }: { data: RadarDataset; onPick: (event: St
   const monthStart = formatYmd(new Date(cursor.getFullYear(), cursor.getMonth(), 1))
   const monthEnd = formatYmd(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0))
   const cells = monthCells(cursor.getFullYear(), cursor.getMonth(), data.today)
-  const visibleEvents = data.events.filter((event) => event.kind !== 'news' && passesFilters(event, activeFilters)).filter((event) => eventOverlapsRange(event, monthStart, monthEnd)).sort(sortEvents)
+  const visibleEvents = calendarEvents(data.events, activeFilters, monthStart, monthEnd, true).sort(sortEvents)
+  const counts = calendarCategoryCounts(data.events, activeFilters, monthStart, monthEnd, true)
+  const dayEvents = day ? calendarEvents(data.events, activeFilters, day, day, true).sort(sortChronologically) : []
+  const favoriteIds = new Set(data.favorites ?? [])
+  const favorites = data.events.filter((event) => favoriteIds.has(event.id) && eventOverlapsRange(event, monthStart, monthEnd)).sort(sortChronologically)
   const agenda = visibleEvents.filter((event) => (event.end || event.start || '') >= data.today)
   const moveMonth = (delta: number) => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + delta, 1))
 
   return (
     <>
-      <div className="monthbar">
+      {!day ? <div className="monthbar">
         <button className="ghost" type="button" onClick={() => moveMonth(-1)} aria-label="이전 달">‹</button>
         <h1>{cursor.getFullYear()}년 {cursor.getMonth() + 1}월</h1>
         <button className="ghost" type="button" onClick={() => moveMonth(1)} aria-label="다음 달">›</button>
         <button className="ghost" type="button" onClick={() => { const today = parseDateKey(data.today); setCursor(new Date(today.getFullYear(), today.getMonth(), 1)) }}>오늘</button>
-      </div>
-      <FilterPanel data={data} filters={activeFilters} onFilters={setFilters} />
-      <main className="calendar-layout">
+      </div> : null}
+      <FilterPanel data={data} filters={activeFilters} onFilters={setFilters} counts={counts} separateLong />
+      {day ? <main className="page day-page"><div className="section-head"><h1>{displayDate(day)} 일정 · {dayEvents.length}건</h1><button className="ghost" type="button" onClick={() => navigate('/')}>캘린더로 돌아가기</button></div><div className="day-groups">{DAY_GROUPS.map((group) => { const events = dayEvents.filter((event) => dayGroup(event) === group); return <section key={group} className="day-group"><h2>{group} <span className="badge">{events.length}</span></h2><ul className="list">{events.map((event) => <li key={event.id} className="card"><h3>{event.title}</h3><p>{whenText(event)} · {event.venue || event.region || '장소 미정'} · {event.price || '가격 확인 필요'}</p>{event.description ? <p className="description">{event.description}</p> : null}<button className="primary" type="button" onClick={() => setSelected(event)}>상세정보</button></li>)}</ul>{!events.length ? <p className="muted">일정 없음</p> : null}</section> })}</div></main> : <main className="calendar-layout">
         <section>
           <div className="weekday-row" aria-hidden="true">{['일', '월', '화', '수', '목', '금', '토'].map((day) => <div key={day}>{day}</div>)}</div>
           <div className="calendar-grid">
@@ -219,28 +231,45 @@ function CalendarPage({ data, onPick }: { data: RadarDataset; onPick: (event: St
               const list = visibleEvents.filter((event) => eventOverlapsDay(event, cell.key)).sort(sortEvents)
               return (
                 <article key={cell.key} className={`day-cell ${cell.inMonth ? '' : 'other'} ${cell.isToday ? 'today' : ''} ${cell.weekday === 0 ? 'sun' : ''} ${cell.weekday === 6 ? 'sat' : ''}`}>
-                  <div className="date-num">{cell.day}</div>
-                  {list.slice(0, 4).map((event) => <EventChip key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />)}
-                  {list.length > 4 ? <span className="more">+{list.length - 4} 더보기</span> : null}
+                  <div className={`date-num ${data.holidays?.[cell.key] ? 'holiday' : ''}`}>{cell.day}{data.holidays?.[cell.key] ? <span className="holiday-label">{data.holidays[cell.key]}</span> : null}</div>
+                  {list.slice(0, 6).map((event) => <EventChip key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />)}
+                  {list.length > 6 ? <button type="button" className="more" onClick={() => navigate(`/day/${cell.key}`)}>+{list.length - 6} 더보기</button> : null}
                 </article>
               )
             })}
           </div>
+          <div className="mobile-holidays">{Object.entries(data.holidays ?? {}).filter(([date]) => date >= monthStart && date <= monthEnd).map(([date, name]) => <span key={date} className="holiday">{displayDate(date)} {name}</span>)}</div>
           <ul className="mobile-agenda">{agenda.length ? agenda.map((event) => <EventLine key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />) : <li className="muted empty">조건에 맞는 일정이 없습니다.</li>}</ul>
+          <section className="card favorite-events"><h2>Favorites Events <span className="badge">{favorites.length}</span></h2><p className="muted small">표시 월의 특별 관심 대상 일정입니다. 검색·카테고리·추천도 필터와 별도로 조회합니다. 대상은 설정의 favorites에서 관리합니다.</p><ul className="list">{favorites.map((event) => <EventLine key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />)}</ul>{!favorites.length ? <p className="muted">이번 달에 수집된 특별 관심 대상 일정이 없습니다.</p> : null}</section>
         </section>
         <CalendarSide data={data} pickIds={pickIds} filters={activeFilters} onOpen={setSelected} />
-      </main>
+      </main>}
       {selected ? <EventModal event={selected} data={data} pickIds={pickIds} onClose={() => setSelected(null)} onPick={onPick} /> : null}
     </>
   )
 }
 
+function MapPage({ data, onPick }: { data: RadarDataset; onPick: (event: StoredEvent) => Promise<void> }) {
+  const pickIds = useMemo(() => new Set(data.picks), [data.picks])
+  const [filters, setFilters] = useState(() => emptyFilters(data, pickIds))
+  const [month, setMonth] = useState(data.today.slice(0, 7))
+  const [selected, setSelected] = useState<StoredEvent | null>(null)
+  const activeFilters = useMemo(() => ({ ...filters, pickIds, today: data.today, baseline: data.baseline }), [filters, pickIds, data.today, data.baseline])
+  const start = `${month}-01`
+  const date = parseDateKey(start)
+  const end = formatYmd(new Date(date.getFullYear(), date.getMonth() + 1, 0))
+  const visible = useMemo(() => calendarEvents(data.events, activeFilters, start, end).sort(sortChronologically), [data.events, activeFilters, start, end])
+  const mapped = useMemo(() => visible.filter((event) => eventCoordinates(event)), [visible])
+  const counts = calendarCategoryCounts(data.events, activeFilters, start, end)
+  return <main className="page wide map-page"><div className="section-head"><h1>지도</h1><label>표시 월 <input type="month" value={month} onChange={(event) => { if (event.currentTarget.value) setMonth(event.currentTarget.value) }} /></label></div><FilterPanel data={data} filters={activeFilters} onFilters={setFilters} counts={counts} /><p className="muted small">OpenStreetMap 외부 지도 타일을 불러옵니다(IP·사이트 출처 전달). 개인 프로필·내 일정·행사 제목은 전송하지 않습니다. 원천 좌표 또는 검증된 공개 공연장·박물관 위치를 표시하며, 좌표 없는 장소는 추측하지 않습니다. 공연장 좌표는 개별 전시실이 아닌 건물·시설 위치입니다.</p><p>총 {visible.length}건 · 지도 표시 {mapped.length}건 · 좌표 없음 {visible.length - mapped.length}건</p><EventMap events={mapped} onOpen={setSelected} /><ul className="list">{visible.map((event) => <EventLine key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />)}</ul>{!visible.length ? <p className="muted">조건에 맞는 일정이 없습니다.</p> : null}{selected ? <EventModal event={selected} data={data} pickIds={pickIds} onClose={() => setSelected(null)} onPick={onPick} /> : null}</main>
+}
+
 function CalendarSide({ data, pickIds, filters, onOpen }: { data: RadarDataset; pickIds: Set<string>; filters: EventFilters; onOpen: (event: StoredEvent) => void }) {
-  const alerts = data.events.filter((event) => event.alert && (event.kind === 'news' || (event.end || event.start || '') >= data.today)).sort(sortEvents)
+  const alerts = data.events.filter((event) => event.alert && isRecentEvent(event, data.today)).sort(sortEvents)
   const picks = data.events.filter((event) => pickIds.has(event.id)).sort(sortEvents)
   const booking = data.events.filter((event) => event.booking_open && event.booking_open.slice(0, 10) >= data.today && passesFilters(event, filters)).sort((a, b) => (a.booking_open ?? '').localeCompare(b.booking_open ?? ''))
-  const long = data.events.filter((event) => event.kind !== 'news' && isLongEvent(event) && (event.end || event.start || '') >= data.today).filter((event) => passesFilters(event, { ...filters, showLong: true })).sort((a, b) => b.score - a.score)
-  const news = data.events.filter((event) => event.kind === 'news' && passesFilters(event, filters)).sort(sortEvents)
+  const long = data.events.filter((event) => isSideLongProgram(event, data.today)).filter((event) => passesFilters(event, { ...filters, showLong: true })).sort((a, b) => b.score - a.score)
+  const news = data.events.filter((event) => event.kind === 'news' && isRecentEvent(event, data.today) && passesFilters(event, filters)).sort(sortChronologically)
 
   return (
     <aside className="side-panel">
@@ -287,14 +316,15 @@ function EventModal({ event, data, pickIds, onClose, onPick }: { event: StoredEv
 
 function NewsPage({ data, onPick }: { data: RadarDataset; onPick: (event: StoredEvent) => Promise<void> }) {
   const [selected, setSelected] = useState<StoredEvent | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const pickIds = useMemo(() => new Set(data.picks), [data.picks])
-  const grouped = data.events.filter((event) => event.kind === 'news').sort((a, b) => (a.alert === b.alert ? b.score - a.score : a.alert ? -1 : 1)).reduce<Record<string, StoredEvent[]>>((acc, event) => {
+  const grouped = data.events.filter((event) => event.kind === 'news' && isRecentEvent(event, data.today)).sort(sortChronologically).reduce<Record<string, StoredEvent[]>>((acc, event) => {
     const topic = typeof event.extra.topic === 'string' ? event.extra.topic : '기타 소식'
     ;(acc[topic] ??= []).push(event)
     return acc
   }, {})
   return (
-    <main className="page narrow"><h1>새 소식</h1>{Object.entries(grouped).map(([topic, events]) => <section key={topic} className="card"><h2>{topic}</h2><ul className="list">{events.map((event) => <EventLine key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />)}</ul></section>)}{Object.keys(grouped).length === 0 ? <p className="muted">소식이 없습니다.</p> : null}{selected ? <EventModal event={selected} data={data} pickIds={pickIds} onClose={() => setSelected(null)} onPick={onPick} /> : null}</main>
+    <main className="page narrow news-page"><h1>새 소식</h1>{Object.entries(grouped).map(([topic, events]) => <section key={topic} className="card"><h2>{topic} <span className="badge">{events.length}</span></h2><ul className="list">{(expanded.has(topic) ? events : events.slice(0, 10)).map((event) => <EventLine key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />)}</ul>{events.length > 10 ? <button className="ghost" type="button" aria-expanded={expanded.has(topic)} onClick={() => setExpanded((prev) => { const next = new Set(prev); if (next.has(topic)) next.delete(topic); else next.add(topic); return next })}>{expanded.has(topic) ? '접기' : `더보기 (${events.length - 10})`}</button> : null}</section>)}{Object.keys(grouped).length === 0 ? <p className="muted">소식이 없습니다.</p> : null}{selected ? <EventModal event={selected} data={data} pickIds={pickIds} onClose={() => setSelected(null)} onPick={onPick} /> : null}</main>
   )
 }
 
@@ -311,6 +341,7 @@ function PicksPage({ data, onPick }: { data: RadarDataset; onPick: (event: Store
 
 function SourcesPage({ onRun }: { onRun: (only?: string[]) => Promise<void> }) {
   const [sources, setSources] = useState<SourceInfo[]>([])
+  const [connections, setConnections] = useState<SourcesResponse['connections']>([])
   const [channels, setChannels] = useState<string[]>([])
   const [latest, setLatest] = useState<LatestRunResponse | null>(null)
   const [error, setError] = useState('')
@@ -319,6 +350,7 @@ function SourcesPage({ onRun }: { onRun: (only?: string[]) => Promise<void> }) {
     const [sourceRes, runRes] = await Promise.all([apiGet<SourcesResponse>('/sources'), apiGet<LatestRunResponse>('/runs/latest')])
     setSources(sourceRes.sources)
     setChannels(sourceRes.channels)
+    setConnections(sourceRes.connections ?? [])
     setLatest(runRes)
   }, [])
   useEffect(() => { void load().catch((err) => setError(appErrorMessage(err))) }, [load])
@@ -332,6 +364,7 @@ function SourcesPage({ onRun }: { onRun: (only?: string[]) => Promise<void> }) {
       {error ? <p className="error">{error}</p> : null}
       {latest?.run ? <section className="card run-summary"><strong>최근 실행 #{latest.run.id}</strong> · {latest.run.status} · 원천 {latest.run.rawCount}건 / 이벤트 {latest.run.eventCount}건 / 오류 {latest.run.errorCount}건<br /><span className="muted">시작 {formatStamp(latest.run.startedAt)} · 종료 {formatStamp(latest.run.finishedAt)}</span>{latest.run.message ? <p className="error">{latest.run.message}</p> : null}</section> : null}
       <div className="source-table-wrap"><table className="source-table"><thead><tr><th>상태</th><th>소스</th><th>그룹</th><th>설정</th><th>최근</th><th>건수</th><th></th></tr></thead><tbody>{sources.map((source) => { const status = source.health?.status ?? 'disabled'; const homepage = safeHttpUrl(source.homepage); return <tr key={source.id}><td><span className={`status-dot ${status}`}>{status}</span></td><td>{homepage ? <a href={homepage} target="_blank" rel="noopener noreferrer">{source.name}</a> : source.name}<div className="muted small">{source.description}</div>{source.health?.error ? <div className="error small">{source.health.error}</div> : null}</td><td>{source.group}</td><td>{source.enabled ? (source.configured ? '완료' : `키 필요: ${source.requiresEnv.join(', ')}`) : '비활성'}</td><td>{formatStamp(source.health?.lastRunAt)}</td><td>{source.health?.count ?? 0}</td><td><button className="ghost" type="button" onClick={() => void run([source.id])} disabled={busy}>이 소스 수집</button></td></tr> })}</tbody></table></div>
+      <section className="card source-connections"><h2>추가 연결 및 필요한 정보</h2><p className="muted">연결된 소스와 후보를 구분했습니다. API 키는 공개 저장소·프로필 YAML에 넣지 말고 서버의 비공개 환경설정에 저장하세요.</p>{connections.map((connection) => { const url = safeHttpUrl(connection.homepage); return <article key={connection.name}><h3>{url ? <a href={url} target="_blank" rel="noopener noreferrer">{connection.name}</a> : connection.name}</h3><p>{connection.status} · {connection.purpose}</p><ul>{connection.needs.map((need) => <li key={need}>{need}</li>)}</ul></article> })}</section>
     </main>
   )
 }
@@ -436,21 +469,24 @@ export function App() {
   if (path === '/login') return <LoginPage />
 
   const content = (() => {
+    if (path === '/version') return <VersionPage />
     if (error) return <ErrorState message={error} onRetry={() => void loadEvents().catch((err) => setError(appErrorMessage(err)))} />
     if (!data) return <LoadingState />
     if (path === '/news') return <NewsPage data={data} onPick={togglePick} />
+    if (path === '/map') return <MapPage data={data} onPick={togglePick} />
     if (path === '/picks') return <PicksPage data={data} onPick={togglePick} />
     if (path === '/sources') return <SourcesPage onRun={startRun} />
     if (path === '/settings') return <SettingsPage />
-    return <CalendarPage data={data} onPick={togglePick} />
+    const day = /^\/day\/(\d{4}-\d{2}-\d{2})$/.exec(path)?.[1]
+    return <CalendarPage data={data} onPick={togglePick} day={day} />
   })()
 
   return (
     <>
       <AppHeader path={path} data={data} running={running} onRefresh={() => void startRun().catch((err) => setError(appErrorMessage(err)))} />
+      {data?.exclusionNotice ? <p className="exclusion-notice muted small" role="note">{data.exclusionNotice}</p> : null}
       {content}
       <footer className="footer muted small">PlayRadar · 개인용 · 외부 공개 금지 · 정보는 각 출처에서 최종 확인하세요.</footer>
     </>
   )
 }
-

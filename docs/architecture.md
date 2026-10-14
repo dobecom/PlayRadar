@@ -20,7 +20,7 @@ core-server  (shared Core-Server NestJS, container :3100, host 127.0.0.1:3100)
   └─ src/playradar/  PlayRadarModule (feature module, registered in AppModule)
        ├─ auth/      access-key login, HMAC session cookie, PlayRadarSessionGuard
        ├─ radar/     controller, collector, scheduler, notifier, repository
-       ├─ sources/   18 source plugins (fetch + parse -> RadarEvent[])
+       ├─ sources/   22 source plugins (fetch + parse -> RadarEvent[])
        ├─ engine/    scoring, dedup, digest, ics (pure functions)
        ├─ database/  PlayRadarDatabaseService on the TypeORM connection "playradar"
        └─ cli.ts     same services via createApplicationContext (dist/playradar/cli.js)
@@ -60,6 +60,27 @@ Core-Server management session.
 6. The repository upserts the snapshot in batches of 200 and deletes vanished
    events. It also records `first_seen` sightings ("new" badges), source
    health, and the run result.
+
+On reads, eligibility filters exclude explicit incompatible participant
+audiences across API, CLI, ICS and digests. Scores are clamped to 0–10. The API
+enriches missing coordinates only for verified public venues and returns
+Korean holidays for the current year −1 through +2.
+Read preferences also exclude private global/news keywords and regional runs,
+and produce favorite-match IDs and an active-exclusion explanation. None of
+these preferences delete or alter the raw event snapshot.
+
+The browser's `/map` view renders event pins with bundled Leaflet and loads
+only viewport tiles directly from `tile.openstreetmap.org`. It sends no
+event/profile/pick payloads to the tile service and performs no runtime
+geocoding. Public OSM venue coordinates are an attributed, small offline
+snapshot; unknown venues are explicitly listed as unlocated. This adds no
+backend service, database table, or public API. The existing CSP permits HTTPS
+images and scripts remain self-hosted.
+
+Deployment reads frontend `release.json` and inserts immutable version metadata
+in `playradar.app.application_versions` after healthy containers are available.
+The unlinked frontend `/version` reads the session-protected
+`/api/v1/playradar/versions`. It is not a public API or a separate service.
 
 ## Database (`playradar.app`)
 

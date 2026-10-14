@@ -56,6 +56,20 @@ export function isLongEvent(e: StoredEvent, minDays = 4): boolean {
   return eventDays(e) >= minDays
 }
 
+export function isSideLongProgram(e: StoredEvent, today: string): boolean {
+  return e.kind !== 'news' && isLongEvent(e) && (e.end || e.start || '').slice(0, 10) >= today
+}
+
+export const DAY_GROUPS = ['문화', '문학', '운동', '커리어', '기타'] as const
+
+export function dayGroup(e: StoredEvent): typeof DAY_GROUPS[number] {
+  if (e.category === 'tech') return '커리어'
+  if (e.category === 'library' || /독서|도서관|북토크|작가와의 만남|문학/.test(`${e.title} ${e.tags.join(' ')}`)) return '문학'
+  if (['running', 'cycling', 'sports'].includes(e.category)) return '운동'
+  if (['classical', 'concert', 'theater', 'exhibition', 'film', 'festival'].includes(e.category)) return '문화'
+  return '기타'
+}
+
 export function isNewEvent(
   e: Pick<StoredEvent, 'source' | 'first_seen'>,
   today: string,
@@ -105,7 +119,7 @@ export function passesFilters(e: StoredEvent, filters: EventFilters): boolean {
   if (filters.categories.size > 0 && !filters.categories.has(e.category)) return false
   if (filters.newOnly && !isNewEvent(e, filters.today, filters.baseline)) return false
   if (filters.picksOnly && !filters.pickIds.has(e.id)) return false
-  if (!filters.showLong && isLongEvent(e)) return false
+  if (!filters.showLong && isLongEvent(e) && (e.start ?? '').slice(0, 10) < filters.today) return false
   const threshold = filters.recommendedOnly ? Math.max(filters.minScore, 4) : filters.minScore
   if (e.score < threshold && !e.alert && !filters.pickIds.has(e.id)) return false
   return true
@@ -116,6 +130,24 @@ export function categoryCounts(events: StoredEvent[]): Record<string, number> {
     acc[e.category] = (acc[e.category] ?? 0) + 1
     return acc
   }, {})
+}
+
+export function calendarEvents(events: StoredEvent[], filters: EventFilters, start: string, end: string, separateLong = false): StoredEvent[] {
+  return events.filter((e) => e.kind !== 'news' && eventOverlapsRange(e, start, end) && (!separateLong || !isSideLongProgram(e, filters.today)) && passesFilters(e, filters))
+}
+
+export function calendarCategoryCounts(events: StoredEvent[], filters: EventFilters, start: string, end: string, separateLong = false): Record<string, number> {
+  return categoryCounts(calendarEvents(events, { ...filters, categories: new Set() }, start, end, separateLong))
+}
+
+export function isRecentEvent(e: StoredEvent, today: string): boolean {
+  const stamp = e.kind === 'news' ? e.published || e.first_seen : e.end || e.start
+  return Boolean(stamp && stamp.slice(0, 10) >= addDays(today, -3))
+}
+
+export function sortChronologically(a: StoredEvent, b: StoredEvent): number {
+  const stamp = (e: StoredEvent) => (e.kind === 'news' ? e.published || e.first_seen : e.start) || '9999'
+  return stamp(a).localeCompare(stamp(b)) || b.score - a.score || a.title.localeCompare(b.title)
 }
 
 export function eventFlags(e: StoredEvent, data: RadarDataset, pickIds: Set<string>): string {

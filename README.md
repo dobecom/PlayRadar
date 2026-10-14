@@ -2,14 +2,15 @@
 
 PlayRadar is a private, single-user events radar. Every day it collects
 concerts, visiting artists, district and library programs, light runs and
-rides, developer events, and topic news from 18 sources. It scores each event
+rides, museum exhibitions, templestay programs, hiking news, developer events,
+and topic news from 22 sources. It scores each event
 against a personal YAML profile and presents the result in a monthly web
-calendar. It can also send digests by Telegram or e-mail and publish a
+calendar and an event map. It can also send digests by Telegram or e-mail and publish a
 subscribable ICS calendar feed.
 
 ```text
-Sources (18 plugins) -> collect -> normalize/dedup -> score -> PostgreSQL
-                                                          |-> web calendar (React)
+Sources (22 plugins) -> collect -> normalize/dedup -> score -> PostgreSQL
+                                                          |-> calendar/day detail/map (React)
                                                           |-> Telegram / e-mail digests
                                                           `-> ICS calendar feed
 ```
@@ -21,7 +22,7 @@ key).
 
 This repository contains **only the frontend** (React 19 + Vite + TypeScript),
 served by Nginx with an `auth_request` gate. The backend (API, collector,
-scheduler, notifier, 18 source plugins, CLI) is the `src/playradar` feature
+scheduler, notifier, 22 source plugins, CLI) is the `src/playradar` feature
 module of the shared **Core-Server** NestJS backend.
 
 ```text
@@ -67,6 +68,45 @@ topics are kept in a YAML profile. Core-Server ships only
 `src\playradar\config\profile.example.yaml`. The real profile is edited in the
 web UI (Settings) and stored in `playradar.app.settings`. Saving it re-scores
 every stored event. Never commit a personal profile to any repository.
+
+Scores are shown on a 0–10 scale; penalties still affect the score and reasons.
+Explicit ineligible participant age/target restrictions are excluded from API,
+CLI, digests and ICS reads, while mixed/adult audiences and admission discounts
+are retained. Set `me.age` for exact age filtering or `me.age_group` for an age band.
+
+The calendar's category counts use the selected month and all non-category
+filters. Reset restores Search, category and toggle defaults (minimum score 0).
+`+n 더보기` opens `/day/YYYY-MM-DD` with full event details.
+Calendar cells show six items. Long-program candidates are kept in the side
+panel rather than duplicated in cells or day lists. Day details group into
+culture, literature, sports, career and other, using 1–5 responsive columns.
+Monthly Favorites Events are independent of search/category/score filters and
+match the private profile's `favorites` list (not the picks list).
+Alerts and news start at today minus three KST days; news is chronological and
+each topic starts with ten items. Korean public/lunar/substitute holidays are
+provided offline by Core-Server.
+
+`/map` uses bundled Leaflet and OpenStreetMap tiles without an API key. Only
+source coordinates or a verified public venue snapshot are used; unlocated
+events remain in the list. No profile, pick list, or event title is sent to OSM.
+Tile requests disclose the browser IP and site origin. Attribution is visible;
+no geolocation, runtime geocoding, tile prefetch or offline downloads are used.
+The Sources tab distinguishes active sources from further API connection
+candidates and lists exactly which credentials/approvals are needed.
+
+Private `view_preferences` control global keyword exclusions, news-only keyword
+exclusions and non-metropolitan running exclusions. They apply on read to every
+API view, CLI, digest and ICS without deleting the raw snapshot. Every signed-in
+page explains the active exclusions. Regional running detection prefers source
+location fields over title mentions and distinguishes Gyeonggi Gwangju from
+Gwangju Metropolitan City; unknown locations remain visible.
+
+The unlinked, session-protected `/version` page follows RequestPulse's version
+history layout. `release.json` starts at `v1.0.0`; Core-DevOps records a release
+once in `playradar.app.application_versions` after deployment. Uncommitted
+local builds have no Git revision and are explicitly labelled. Do not reuse a
+version for a materially different release. No release history is invented for
+earlier deployments that predate tracking.
 
 ## CLI (Core-Server)
 

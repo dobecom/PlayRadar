@@ -43,6 +43,9 @@ export interface SourceHealth {
 }
 
 export interface RadarDataset {
+  exclusionNotice?: string
+  favorites?: string[]
+  holidays?: Record<string, string>
   today: string
   generated: string | null
   running: boolean
@@ -68,6 +71,7 @@ export interface SourceInfo {
 export interface SourcesResponse {
   sources: SourceInfo[]
   channels: string[]
+  connections: Array<{ name: string; homepage: string; status: string; purpose: string; needs: string[] }>
 }
 
 export interface RunRecord {

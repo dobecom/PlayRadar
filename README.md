@@ -3,13 +3,13 @@
 PlayRadar is a private, single-user events radar. Every day it collects
 concerts, visiting artists, district and library programs, light runs and
 rides, museum exhibitions, templestay programs, hiking news, developer events,
-and topic news from 22 sources. It scores each event
+and topic news from 23 sources. It scores each event
 against a personal YAML profile and presents the result in a monthly web
 calendar and an event map. It can also send digests by Telegram or e-mail and publish a
 subscribable ICS calendar feed.
 
 ```text
-Sources (22 plugins) -> collect -> normalize/dedup -> score -> PostgreSQL
+Sources (23 plugins) -> collect -> normalize/dedup -> score -> PostgreSQL
                                                           |-> calendar/day detail/map (React)
                                                           |-> Telegram / e-mail digests
                                                           `-> ICS calendar feed
@@ -22,7 +22,7 @@ key).
 
 This repository contains **only the frontend** (React 19 + Vite + TypeScript),
 served by Nginx with an `auth_request` gate. The backend (API, collector,
-scheduler, notifier, 22 source plugins, CLI) is the `src/playradar` feature
+scheduler, notifier, 23 source plugins, CLI) is the `src/playradar` feature
 module of the shared **Core-Server** NestJS backend.
 
 ```text
@@ -81,7 +81,8 @@ Calendar cells show six items. Long-program candidates are kept in the side
 panel rather than duplicated in cells or day lists. Day details group into
 culture, literature, sports, career and other, using 1–5 responsive columns.
 Monthly Favorites Events are independent of search/category/score filters and
-match the private profile's `favorites` list (not the picks list).
+match the private profile's `favorites` list plus events a source pins itself
+(EBS 스페이스 공감 방청·공연); it is not the picks list.
 Alerts and news start at today minus three KST days; news is chronological and
 each topic starts with ten items. Korean public/lunar/substitute holidays are
 provided offline by Core-Server.

@@ -240,7 +240,7 @@ function CalendarPage({ data, onPick, day }: { data: RadarDataset; onPick: (even
           </div>
           <div className="mobile-holidays">{Object.entries(data.holidays ?? {}).filter(([date]) => date >= monthStart && date <= monthEnd).map(([date, name]) => <span key={date} className="holiday">{displayDate(date)} {name}</span>)}</div>
           <ul className="mobile-agenda">{agenda.length ? agenda.map((event) => <EventLine key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />) : <li className="muted empty">조건에 맞는 일정이 없습니다.</li>}</ul>
-          <section className="card favorite-events"><h2>Favorites Events <span className="badge">{favorites.length}</span></h2><p className="muted small">표시 월의 특별 관심 대상 일정입니다. 검색·카테고리·추천도 필터와 별도로 조회합니다. 대상은 설정의 favorites에서 관리합니다.</p><ul className="list">{favorites.map((event) => <EventLine key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />)}</ul>{!favorites.length ? <p className="muted">이번 달에 수집된 특별 관심 대상 일정이 없습니다.</p> : null}</section>
+          <section className="card favorite-events"><h2>Favorites Events <span className="badge">{favorites.length}</span></h2><p className="muted small">표시 월의 특별 관심 대상 일정입니다. 검색·카테고리·추천도 필터와 별도로 조회합니다. 대상은 설정의 favorites와 소스가 직접 고정하는 EBS 스페이스 공감 방청·공연입니다.</p><ul className="list">{favorites.map((event) => <EventLine key={event.id} event={event} data={data} pickIds={pickIds} onOpen={setSelected} />)}</ul>{!favorites.length ? <p className="muted">이번 달에 수집된 특별 관심 대상 일정이 없습니다.</p> : null}</section>
         </section>
         <CalendarSide data={data} pickIds={pickIds} filters={activeFilters} onOpen={setSelected} />
       </main>}

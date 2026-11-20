@@ -20,7 +20,7 @@ core-server  (shared Core-Server NestJS, container :3100, host 127.0.0.1:3100)
   └─ src/playradar/  PlayRadarModule (feature module, registered in AppModule)
        ├─ auth/      access-key login, HMAC session cookie, PlayRadarSessionGuard
        ├─ radar/     controller, collector, scheduler, notifier, repository
-       ├─ sources/   22 source plugins (fetch + parse -> RadarEvent[])
+       ├─ sources/   23 source plugins (fetch + parse -> RadarEvent[])
        ├─ engine/    scoring, dedup, digest, ics (pure functions)
        ├─ database/  PlayRadarDatabaseService on the TypeORM connection "playradar"
        └─ cli.ts     same services via createApplicationContext (dist/playradar/cli.js)

@@ -1,4 +1,4 @@
 {
-  "version": "v1.0.0",
-  "description": "Adds profile-managed exclusions and Favorites Events, responsive grouped day details, six calendar items, separate long programs, and private version history."
+  "version": "v1.1.0",
+  "description": "[Feature] - Adds EBS Space Gonggam (스페이스 공감) lineups and audience-application notices to Favorites Events; - Keeps announced shows until their date"
 }

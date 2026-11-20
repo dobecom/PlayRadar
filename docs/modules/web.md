@@ -62,8 +62,9 @@ minimum width reduce the column count on narrower windows and force one column
 on mobile. Text wraps inside cards. Holiday labels are 15px bold (mobile 18px).
 
 `RadarDataset.favorites` contains event IDs matched server-side against the
-private profile. Favorites Events appears below the calendar, is month-scoped,
-and is independent of UI search/category/score and long-program visibility.
+private profile and event IDs that a source pins (EBS 스페이스 공감 방청·공연).
+Favorites Events appears below the calendar, is month-scoped, and is
+independent of UI search/category/score and long-program visibility.
 `exclusionNotice` comes from the same backend settings that filter the dataset;
 the shared shell displays it on each signed-in page. News adds its own private
 keyword exclusions on the backend, so the sidebar and News tab agree.
